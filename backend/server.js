@@ -1,6 +1,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import Database from "better-sqlite3";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -8,10 +9,28 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(bodyParser.json());
 
-const users = [];
-const accounts = [];
-const sessions = [];
+const db = new Database("bank.db");
 
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    password TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER,
+    amount INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER,
+    token TEXT
+  );
+`);
 function generateOTP() {
   const otp = Math.floor(100000 + Math.random() * 900000);
   return otp.toString();
@@ -19,35 +38,27 @@ function generateOTP() {
 app.post("/users", (req, res) => {
   const { username, password } = req.body;
 
-  const newUser = {
-    id: users.length + 101,
-    username,
-    password,
-  };
+  const result = db
+    .prepare("INSERT INTO users (username, password) VALUES (?, ?)")
+    .run(username, password);
 
-  users.push(newUser);
+  const userId = result.lastInsertRowid;
 
-  const newAccount = {
-    id: accounts.length + 1,
-    userId: newUser.id,
-    amount: 0,
-  };
-
-  accounts.push(newAccount);
+  db.prepare(
+    "INSERT INTO accounts (userId, amount) VALUES (?, ?)"
+  ).run(userId, 0);
 
   res.status(201).json({
-    id: newUser.id,
-    username: newUser.username,
+    id: userId,
+    username: username,
   });
-}); 
+});
 app.post("/sessions", (req, res) => {
   const { username, password } = req.body;
 
-  const user = users.find(
-    (user) =>
-      user.username === username &&
-      user.password === password
-  );
+  const user = db
+    .prepare("SELECT * FROM users WHERE username = ? AND password = ?")
+    .get(username, password);
 
   if (!user) {
     return res.status(401).json({
@@ -57,21 +68,20 @@ app.post("/sessions", (req, res) => {
 
   const token = generateOTP();
 
-  sessions.push({
-    userId: user.id,
-    token,
-  });
+  db.prepare(
+    "INSERT INTO sessions (userId, token) VALUES (?, ?)"
+  ).run(user.id, token);
 
   res.status(200).json({
     token,
   });
-});
+}); 
 app.post("/me/accounts", (req, res) => {
   const { token } = req.body;
 
-  const session = sessions.find(
-    (session) => session.token === token
-  );
+  const session = db
+    .prepare("SELECT * FROM sessions WHERE token = ?")
+    .get(token);
 
   if (!session) {
     return res.status(401).json({
@@ -79,9 +89,9 @@ app.post("/me/accounts", (req, res) => {
     });
   }
 
-  const account = accounts.find(
-    (account) => account.userId === session.userId
-  );
+  const account = db
+    .prepare("SELECT * FROM accounts WHERE userId = ?")
+    .get(session.userId);
 
   res.status(200).json({
     amount: account.amount,
@@ -90,9 +100,9 @@ app.post("/me/accounts", (req, res) => {
 app.post("/me/accounts/transactions", (req, res) => {
   const { token, amount } = req.body;
 
-  const session = sessions.find(
-    (session) => session.token === token
-  );
+  const session = db
+    .prepare("SELECT * FROM sessions WHERE token = ?")
+    .get(token);
 
   if (!session) {
     return res.status(401).json({
@@ -100,14 +110,18 @@ app.post("/me/accounts/transactions", (req, res) => {
     });
   }
 
-  const account = accounts.find(
-    (account) => account.userId === session.userId
-  );
+  const account = db
+    .prepare("SELECT * FROM accounts WHERE userId = ?")
+    .get(session.userId);
 
-  account.amount += Number(amount);
+  const newAmount = account.amount + Number(amount);
+
+  db.prepare(
+    "UPDATE accounts SET amount = ? WHERE userId = ?"
+  ).run(newAmount, session.userId);
 
   res.status(200).json({
-    amount: account.amount,
+    amount: newAmount,
   });
 });
 app.listen(port, () => {
