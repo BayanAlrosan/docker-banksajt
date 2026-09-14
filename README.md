@@ -233,3 +233,6 @@ Efter denna uppgift ska ni kunna skapa en fullstack sajt med api och publicera p
 ### :runner: VG - uppgift
 
 1. Googla eller fråga ai hur du kan köra frontend och backend i bakgrunden, så att inte sajten går ner när du stänger terminalen. Detta kan t.ex. göras med `pm2`. Skriv sedan länken till din sajt i README.md
+## Live site
+
+http://56.228.26.247:3000
