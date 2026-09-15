@@ -1,7 +1,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
-import Database from "better-sqlite3";
+import mysql from "mysql2/promise";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -9,121 +9,163 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(bodyParser.json());
 
-const db = new Database("bank.db");
+const db = mysql.createPool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  decimalNumbers: true,
+});
 
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT,
-    password TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS accounts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId INTEGER,
-    amount INTEGER
-  );
-
-  CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId INTEGER,
-    token TEXT
-  );
-`);
 function generateOTP() {
   const otp = Math.floor(100000 + Math.random() * 900000);
   return otp.toString();
 }
-app.post("/users", (req, res) => {
-  const { username, password } = req.body;
 
-  const result = db
-    .prepare("INSERT INTO users (username, password) VALUES (?, ?)")
-    .run(username, password);
+// Skapa användare
+app.post("/users", async (req, res) => {
+  try {
+    const { username, password } = req.body;
 
-  const userId = result.lastInsertRowid;
+    const [result] = await db.execute(
+      "INSERT INTO users (username, password) VALUES (?, ?)",
+      [username, password]
+    );
 
-  db.prepare(
-    "INSERT INTO accounts (userId, amount) VALUES (?, ?)"
-  ).run(userId, 0);
+    const userId = result.insertId;
 
-  res.status(201).json({
-    id: userId,
-    username: username,
-  });
-});
-app.post("/sessions", (req, res) => {
-  const { username, password } = req.body;
+    await db.execute(
+      "INSERT INTO accounts (userId, amount) VALUES (?, ?)",
+      [userId, 0]
+    );
 
-  const user = db
-    .prepare("SELECT * FROM users WHERE username = ? AND password = ?")
-    .get(username, password);
-
-  if (!user) {
-    return res.status(401).json({
-      message: "Fel användarnamn eller lösenord",
+    res.status(201).json({
+      id: userId,
+      username,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Kunde inte skapa användare",
     });
   }
+});
 
-  const token = generateOTP();
+// Logga in
+app.post("/sessions", async (req, res) => {
+  try {
+    const { username, password } = req.body;
 
-  db.prepare(
-    "INSERT INTO sessions (userId, token) VALUES (?, ?)"
-  ).run(user.id, token);
+    const [users] = await db.execute(
+      "SELECT * FROM users WHERE username = ? AND password = ?",
+      [username, password]
+    );
 
-  res.status(200).json({
-    token,
-  });
-}); 
-app.post("/me/accounts", (req, res) => {
-  const { token } = req.body;
+    const user = users[0];
 
-  const session = db
-    .prepare("SELECT * FROM sessions WHERE token = ?")
-    .get(token);
+    if (!user) {
+      return res.status(401).json({
+        message: "Fel användarnamn eller lösenord",
+      });
+    }
 
-  if (!session) {
-    return res.status(401).json({
-      message: "Ogiltig token",
+    const token = generateOTP();
+
+    await db.execute(
+      "INSERT INTO sessions (userId, token) VALUES (?, ?)",
+      [user.id, token]
+    );
+
+    res.status(200).json({
+      token,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Något gick fel",
     });
   }
-
-  const account = db
-    .prepare("SELECT * FROM accounts WHERE userId = ?")
-    .get(session.userId);
-
-  res.status(200).json({
-    amount: account.amount,
-  });
 });
-app.post("/me/accounts/transactions", (req, res) => {
-  const { token, amount } = req.body;
 
-  const session = db
-    .prepare("SELECT * FROM sessions WHERE token = ?")
-    .get(token);
+// Visa saldo
+app.post("/me/accounts", async (req, res) => {
+  try {
+    const { token } = req.body;
 
-  if (!session) {
-    return res.status(401).json({
-      message: "Ogiltig token",
+    const [sessions] = await db.execute(
+      "SELECT * FROM sessions WHERE token = ?",
+      [token]
+    );
+
+    const session = sessions[0];
+
+    if (!session) {
+      return res.status(401).json({
+        message: "Ogiltig token",
+      });
+    }
+
+    const [accounts] = await db.execute(
+      "SELECT * FROM accounts WHERE userId = ?",
+      [session.userId]
+    );
+
+    const account = accounts[0];
+
+    res.status(200).json({
+      amount: account.amount,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Något gick fel",
     });
   }
-
-  const account = db
-    .prepare("SELECT * FROM accounts WHERE userId = ?")
-    .get(session.userId);
-
-  const newAmount = account.amount + Number(amount);
-
-  db.prepare(
-    "UPDATE accounts SET amount = ? WHERE userId = ?"
-  ).run(newAmount, session.userId);
-
-  res.status(200).json({
-    amount: newAmount,
-  });
 });
+
+// Sätt in pengar
+app.post("/me/accounts/transactions", async (req, res) => {
+  try {
+    const { token, amount } = req.body;
+
+    const [sessions] = await db.execute(
+      "SELECT * FROM sessions WHERE token = ?",
+      [token]
+    );
+
+    const session = sessions[0];
+
+    if (!session) {
+      return res.status(401).json({
+        message: "Ogiltig token",
+      });
+    }
+
+    const [accounts] = await db.execute(
+      "SELECT * FROM accounts WHERE userId = ?",
+      [session.userId]
+    );
+
+    const account = accounts[0];
+    const newAmount = Number(account.amount) + Number(amount);
+
+    await db.execute(
+      "UPDATE accounts SET amount = ? WHERE userId = ?",
+      [newAmount, session.userId]
+    );
+
+    res.status(200).json({
+      amount: newAmount,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Något gick fel",
+    });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Bankens backend körs på http://localhost:${port}`);
 });
