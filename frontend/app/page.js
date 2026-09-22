@@ -23,4 +23,4 @@ export default function Home() {
       </section>
     </main>
   );
-}
+}const unusedVariable = 123;
