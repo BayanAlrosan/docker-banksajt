@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
+
 export default function LoginPage() {
   const router = useRouter();
 
@@ -13,7 +15,7 @@ export default function LoginPage() {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    const response = await fetch("http://127.0.0.1:3001/sessions", {
+    const response = await fetch(`${API_URL}/sessions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

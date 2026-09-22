@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
+
 export default function AccountPage() {
   const router = useRouter();
 
@@ -19,7 +21,7 @@ export default function AccountPage() {
       }
 
       const response = await fetch(
-        "http://127.0.0.1:3001/me/accounts",
+        `${API_URL}/me/accounts`,
         {
           method: "POST",
           headers: {
@@ -45,7 +47,7 @@ export default function AccountPage() {
     const token = localStorage.getItem("token");
 
     const response = await fetch(
-      "http://127.0.0.1:3001/me/accounts/transactions",
+      `${API_URL}/me/accounts/transactions`,
       {
         method: "POST",
         headers: {
