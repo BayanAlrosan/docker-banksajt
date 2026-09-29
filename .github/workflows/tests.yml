@@ -14,6 +14,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: bank_app
+      DB_PASSWORD: bank_password
+      DB_NAME: bank
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: bank
+          MYSQL_USER: bank_app
+          MYSQL_PASSWORD: bank_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
     steps:
       - name: Hämta repository
         uses: actions/checkout@v4
@@ -26,22 +49,10 @@ jobs:
       - name: Kontrollera projektstruktur
         shell: bash
         run: |
-          test -f frontend/package.json || {
-            echo "::error::frontend/package.json saknas. Skapa Next.js-projektet i mappen frontend."
-            exit 1
-          }
-          test -f frontend/package-lock.json || {
-            echo "::error::frontend/package-lock.json saknas. Projektet ska använda npm."
-            exit 1
-          }
-          test -f backend/package.json || {
-            echo "::error::backend/package.json saknas. Skapa Express-projektet i mappen backend."
-            exit 1
-          }
-          test -f backend/package-lock.json || {
-            echo "::error::backend/package-lock.json saknas. Projektet ska använda npm."
-            exit 1
-          }
+          test -f frontend/package.json
+          test -f frontend/package-lock.json
+          test -f backend/package.json
+          test -f backend/package-lock.json
 
       - name: Installera frontend
         run: npm ci --prefix frontend
@@ -55,6 +66,20 @@ jobs:
       - name: Installera Chromium
         working-directory: tests
         run: npx playwright install --with-deps chromium
+
+      - name: Installera MySQL-klient
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
+      - name: Skapa testdatabasens tabeller
+        run: |
+          mysql \
+            -h 127.0.0.1 \
+            -P 3306 \
+            -u bank_app \
+            -pbank_password \
+            bank < database/init.sql
 
       - name: Bygg frontend
         env:
