@@ -2,3 +2,6 @@
 tests/test-results/
 tests/playwright-report/
 frontend/.next/
+
+frontend/test-results/
+frontend/playwright-report/

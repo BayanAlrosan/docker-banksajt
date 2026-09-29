@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   frontend:
@@ -46,12 +49,68 @@ jobs:
         working-directory: ./backend
         run: npm ci
 
+      - name: Run Vitest
+        working-directory: ./backend
+        run: npm test
+
       - name: Check backend syntax
         working-directory: ./backend
         run: node --check server.js
 
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Start test environment
+        run: docker compose -f docker-compose.test.yml up -d --build
+
+      - name: Wait for backend
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3003/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Wait for frontend
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3002; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Run Playwright tests
+        working-directory: ./frontend
+        run: npx playwright test
+
+      - name: Stop test environment
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
   deploy:
-    needs: [frontend, backend]
+    needs: [frontend, backend, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:

@@ -1,0 +1,48 @@
+name: docker-banksajt-test
+
+services:
+  nextjs:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://127.0.0.1:3003
+        NEXT_PUBLIC_FEATURE_SAVINGS: "false"
+    ports:
+      - "3002:3000"
+    depends_on:
+      - express
+
+  express:
+    build:
+      context: ./backend
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: bank_app
+      DB_PASSWORD: bank_password
+      DB_NAME: bank
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "3003:3001"
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: bank
+      MYSQL_USER: bank_app
+      MYSQL_PASSWORD: bank_password
+    volumes:
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
