@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
+const FEATURE_SAVINGS = process.env.NEXT_PUBLIC_FEATURE_SAVINGS === "true";
 
 export default function AccountPage() {
   const router = useRouter();
@@ -73,6 +74,13 @@ export default function AccountPage() {
       <h1>Mitt konto</h1>
 
       <h2>Saldo: {balance === null ? "Laddar..." : `${balance} kr`}</h2>
+
+      {FEATURE_SAVINGS && (
+        <section>
+          <h2>Savings</h2>
+          <p>Här kan du snart få en bättre överblick över ditt sparande.</p>
+        </section>
+      )}
 
       <form onSubmit={handleDeposit}>
         <label htmlFor="amount">Belopp</label>
