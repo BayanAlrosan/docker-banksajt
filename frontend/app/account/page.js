@@ -138,7 +138,7 @@ export default function AccountPage() {
       </form>
 
       <form onSubmit={handleWithdrawal}>
-        <label htmlFor="withdrawalAmount">Uttagsbelopp</label>
+        <label htmlFor="withdrawalAmount">Uttag</label>
 
         <input
           id="withdrawalAmount"

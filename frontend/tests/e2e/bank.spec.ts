@@ -93,7 +93,7 @@ test("uttag fungerar och övertrassering nekas", async ({ page }) => {
     page.getByRole("heading", { name: "Saldo: 500 kr" })
   ).toBeVisible();
 
-  await page.getByLabel("Uttagsbelopp").fill("200");
+  await page.getByLabel("Uttag", { exact: true }).fill("200");
   await page.getByRole("button", { name: "Ta ut pengar" }).click();
 
   await expect(
@@ -118,7 +118,7 @@ test("uttag fungerar och övertrassering nekas", async ({ page }) => {
     page.getByRole("heading", { name: "Saldo: 300 kr" })
   ).toBeVisible();
 
-  await page.getByLabel("Uttagsbelopp").fill("400");
+  await page.getByLabel("Uttag", { exact: true }).fill("400");
   await page.getByRole("button", { name: "Ta ut pengar" }).click();
 
   await expect(
