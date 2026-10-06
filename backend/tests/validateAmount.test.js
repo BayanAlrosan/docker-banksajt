@@ -19,7 +19,3 @@ describe("validateAmount", () => {
     expect(validateAmount(Infinity)).toBe(false);
   });
 });
-
-it("TEMP - ska misslyckas för att testa CI/CD", () => {
-  expect(true).toBe(false);
-});
