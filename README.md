@@ -314,3 +314,7 @@ JWT är normalt stateless. När användaren loggar ut tas token bort från klien
 **6. Vilka hemligheter finns i projektet, och var ska de lagras lokalt, i GitHub Actions och på EC2?**
 
 JWT-signeringens hemliga nyckel och andra känsliga värden ska aldrig sparas i Git. Lokalt lagras de i `.env`, GitHub Actions använder en separat testnyckel eller GitHub Secret och EC2 har en egen produktionsnyckel.
+
+### Grön GitHub Actions-körning
+
+https://github.com/BayanAlrosan/docker-banksajt/actions/runs/38359177594
