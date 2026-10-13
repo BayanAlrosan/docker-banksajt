@@ -248,3 +248,69 @@ Jag har lagt till en Savings-funktion som styrs med `NEXT_PUBLIC_FEATURE_SAVINGS
 
 `false` = Savings visas inte
 `true` = Savings visas
+
+## Säker inloggning med bcrypt och JWT
+
+### Starta projektet lokalt
+
+Skapa en `.env`-fil i projektets rot med nödvändiga miljövariabler och starta sedan projektet med:
+
+docker compose up -d --build
+
+Frontend körs på `http://127.0.0.1:3000` och backend på `http://127.0.0.1:3001`.
+
+### Miljövariabler
+
+Projektet använder:
+
+- `JWT_SECRET`
+- `TEST_JWT_SECRET`
+- `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_FEATURE_SAVINGS`
+- `DB_HOST`
+- `DB_PORT`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
+
+De verkliga hemliga värdena sparas inte i Git. Lokal miljö, testmiljö och EC2 använder separata JWT-nycklar.
+
+### Köra tester
+
+Vitest:
+
+`npm test --prefix backend`
+
+Playwright-testmiljö:
+
+`docker compose -f docker-compose.test.yml up -d --build`
+
+Playwright:
+
+`cd frontend && npx playwright test`
+
+### Säkerhetsfrågor
+
+**1. Varför kan du läsa en JWT-payload utan signeringsnyckeln, och vad skyddar signaturen?**
+
+JWT-payloaden är Base64url-kodad och därför inte hemlig. Signaturen gör att servern kan kontrollera att token är äkta och inte har ändrats.
+
+**2. Vad händer om någon stjäl en giltig token innan den går ut? Stoppar signaturen personen?**
+
+Nej. En stulen giltig token kan användas tills den går ut. Signaturen hindrar ändring eller förfalskning av token, men inte användning av en redan giltig token.
+
+**3. Vad är skillnaden mellan att hasha ett lösenord och att signera en token?**
+
+Hashning används för att lagra lösenord utan klartext och ska inte kunna återställas till lösenordet. Signering används för att kontrollera att en token är äkta och inte har ändrats.
+
+**4. Vilken risk finns med att lagra en token i localStorage om sidan får en XSS-sårbarhet?**
+
+JavaScript kan läsa localStorage. Vid XSS kan skadlig kod därför stjäla token och använda den som användaren.
+
+**5. Varför kan servern inte automatiskt veta att en JWT ska sluta gälla när användaren klickar på Logga ut?**
+
+JWT är normalt stateless. När användaren loggar ut tas token bort från klienten, men servern har ingen automatisk lista över aktiva tokens. Den är därför tekniskt giltig tills den går ut om ingen spärrlista används.
+
+**6. Vilka hemligheter finns i projektet, och var ska de lagras lokalt, i GitHub Actions och på EC2?**
+
+JWT-signeringens hemliga nyckel och andra känsliga värden ska aldrig sparas i Git. Lokalt lagras de i `.env`, GitHub Actions använder en separat testnyckel eller GitHub Secret och EC2 har en egen produktionsnyckel.

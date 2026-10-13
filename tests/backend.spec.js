@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 
 const API_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3001';
 
-test.describe('Backend – godkänt nivå', () => {
-  test('användaren kan skapas, logga in, se sitt saldo och sätta in pengar', async ({
+test.describe('Backend – JWT-säkerhet', () => {
+  test('användaren kan logga in med JWT, se saldo och sätta in pengar', async ({
     request,
   }) => {
     const username = `student-${Date.now()}`;
@@ -13,71 +13,104 @@ test.describe('Backend – godkänt nivå', () => {
       data: { username, password },
     });
 
-    expect(createUserResponse.ok(), 'POST /users ska svara med en 2xx-status').toBe(
-      true,
-    );
+    expect(createUserResponse.ok()).toBe(true);
 
     const loginResponse = await request.post(`${API_URL}/sessions`, {
       data: { username, password },
     });
 
-    expect(
-      loginResponse.ok(),
-      'POST /sessions ska svara med en 2xx-status för rätt inloggning',
-    ).toBe(true);
+    expect(loginResponse.ok()).toBe(true);
 
     const loginBody = await loginResponse.json();
-    expect(loginBody).toEqual(
-      expect.objectContaining({
-        token: expect.stringMatching(/^\d{6}$/),
-      }),
+    const { token } = loginBody;
+
+    expect(typeof token).toBe('string');
+    expect(token.split('.')).toHaveLength(3);
+
+    const initialAccountResponse = await request.post(
+      `${API_URL}/me/accounts`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
     );
 
-    const { token } = loginBody;
-    const initialAccountResponse = await request.post(`${API_URL}/me/accounts`, {
-      data: { token },
-    });
+    expect(initialAccountResponse.ok()).toBe(true);
 
-    expect(
-      initialAccountResponse.ok(),
-      'POST /me/accounts ska godkänna användarens token',
-    ).toBe(true);
     const initialAccountBody = await initialAccountResponse.json();
-    expect(initialAccountBody).toEqual(expect.objectContaining({ amount: 0 }));
+    expect(initialAccountBody).toEqual(
+      expect.objectContaining({ amount: 0 }),
+    );
 
     const transactionResponse = await request.post(
       `${API_URL}/me/accounts/transactions`,
       {
-        data: { token, amount: 250 },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        data: { amount: 250 },
       },
     );
 
-    expect(
-      transactionResponse.ok(),
-      'POST /me/accounts/transactions ska svara med en 2xx-status',
-    ).toBe(true);
-    const transactionBody = await transactionResponse.json();
-    expect(transactionBody).toEqual(expect.objectContaining({ amount: 250 }));
+    expect(transactionResponse.ok()).toBe(true);
 
-    const updatedAccountResponse = await request.post(`${API_URL}/me/accounts`, {
-      data: { token },
-    });
+    const transactionBody = await transactionResponse.json();
+    expect(transactionBody).toEqual(
+      expect.objectContaining({ amount: 250 }),
+    );
+
+    const updatedAccountResponse = await request.post(
+      `${API_URL}/me/accounts`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
 
     expect(updatedAccountResponse.ok()).toBe(true);
+
     const updatedAccountBody = await updatedAccountResponse.json();
-    expect(updatedAccountBody).toEqual(expect.objectContaining({ amount: 250 }));
+    expect(updatedAccountBody).toEqual(
+      expect.objectContaining({ amount: 250 }),
+    );
   });
 
-  test('kontouppgifter skyddas av ett giltigt engångslösenord', async ({
-    request,
-  }) => {
-    const response = await request.post(`${API_URL}/me/accounts`, {
-      data: { token: '000000' },
+  test('saknad eller ändrad JWT nekas', async ({ request }) => {
+    const username = `jwt-${Date.now()}`;
+    const password = 'hemligt123';
+
+    await request.post(`${API_URL}/users`, {
+      data: { username, password },
     });
 
-    expect(
-      [401, 403],
-      'En ogiltig token ska ge status 401 eller 403',
-    ).toContain(response.status());
+    const loginResponse = await request.post(`${API_URL}/sessions`, {
+      data: { username, password },
+    });
+
+    expect(loginResponse.ok()).toBe(true);
+
+    const { token } = await loginResponse.json();
+
+    const missingTokenResponse = await request.post(
+      `${API_URL}/me/accounts`,
+    );
+
+    expect(missingTokenResponse.status()).toBe(401);
+
+    const changedToken =
+      token.slice(0, -1) + (token.endsWith('a') ? 'b' : 'a');
+
+    const changedTokenResponse = await request.post(
+      `${API_URL}/me/accounts`,
+      {
+        headers: {
+          Authorization: `Bearer ${changedToken}`,
+        },
+      },
+    );
+
+    expect(changedTokenResponse.status()).toBe(401);
   });
 });

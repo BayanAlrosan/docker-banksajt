@@ -2,11 +2,19 @@ import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import mysql from "mysql2/promise";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { validateAmount } from "./src/validateAmount.js";
 import { validateWithdrawal } from "./src/validateWithdrawal.js";
 
 const app = express();
 const port = process.env.PORT || 3001;
+
+const secret = process.env.JWT_SECRET;
+
+if (!secret || Buffer.byteLength(secret, "utf8") < 32) {
+  throw new Error("JWT_SECRET måste vara minst 32 byte");
+}
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -24,9 +32,45 @@ const db = mysql.createPool({
   decimalNumbers: true,
 });
 
-function generateOTP() {
-  const otp = Math.floor(100000 + Math.random() * 900000);
-  return otp.toString();
+function requireAuth(req, res, next) {
+  const authorization = req.get("authorization");
+
+  if (!authorization || !authorization.startsWith("Bearer ")) {
+    return res.status(401).json({
+      message: "Saknad eller ogiltig token",
+    });
+  }
+
+  const token = authorization.slice(7);
+
+  try {
+    const payload = jwt.verify(token, secret, {
+      algorithms: ["HS256"],
+      issuer: "banken",
+      audience: "banken-api",
+    });
+
+    if (typeof payload !== "object" || typeof payload.sub !== "string") {
+      return res.status(401).json({
+        message: "Ogiltig eller utgången token",
+      });
+    }
+
+    const userId = Number(payload.sub);
+
+    if (!Number.isSafeInteger(userId) || userId <= 0) {
+      return res.status(401).json({
+        message: "Ogiltig eller utgången token",
+      });
+    }
+
+    req.userId = userId;
+    next();
+  } catch {
+    return res.status(401).json({
+      message: "Ogiltig eller utgången token",
+    });
+  }
 }
 
 // Skapa användare
@@ -34,9 +78,23 @@ app.post("/users", async (req, res) => {
   try {
     const { username, password } = req.body;
 
+    if (!username || !password) {
+      return res.status(400).json({
+        message: "Användarnamn och lösenord krävs",
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        message: "Lösenordet måste vara minst 8 tecken",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
     const [result] = await db.execute(
       "INSERT INTO users (username, password) VALUES (?, ?)",
-      [username, password]
+      [username, passwordHash]
     );
 
     const userId = result.insertId;
@@ -64,8 +122,8 @@ app.post("/sessions", async (req, res) => {
     const { username, password } = req.body;
 
     const [users] = await db.execute(
-      "SELECT * FROM users WHERE username = ? AND password = ?",
-      [username, password]
+      "SELECT * FROM users WHERE username = ?",
+      [username]
     );
 
     const user = users[0];
@@ -76,16 +134,26 @@ app.post("/sessions", async (req, res) => {
       });
     }
 
-    const token = generateOTP();
+    const passwordIsCorrect = await bcrypt.compare(password, user.password);
 
-    await db.execute(
-      "INSERT INTO sessions (userId, token) VALUES (?, ?)",
-      [user.id, token]
+    if (!passwordIsCorrect) {
+      return res.status(401).json({
+        message: "Fel användarnamn eller lösenord",
+      });
+    }
+
+    const token = jwt.sign(
+      { sub: String(user.id) },
+      secret,
+      {
+        algorithm: "HS256",
+        issuer: "banken",
+        audience: "banken-api",
+        expiresIn: "15m",
+      }
     );
 
-    res.status(200).json({
-      token,
-    });
+    res.status(200).json({ token });
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -95,29 +163,20 @@ app.post("/sessions", async (req, res) => {
 });
 
 // Visa saldo
-app.post("/me/accounts", async (req, res) => {
+app.post("/me/accounts", requireAuth, async (req, res) => {
   try {
-    const { token } = req.body;
-
-    const [sessions] = await db.execute(
-      "SELECT * FROM sessions WHERE token = ?",
-      [token]
-    );
-
-    const session = sessions[0];
-
-    if (!session) {
-      return res.status(401).json({
-        message: "Ogiltig token",
-      });
-    }
-
     const [accounts] = await db.execute(
       "SELECT * FROM accounts WHERE userId = ?",
-      [session.userId]
+      [req.userId]
     );
 
     const account = accounts[0];
+
+    if (!account) {
+      return res.status(404).json({
+        message: "Konto saknas",
+      });
+    }
 
     res.status(200).json({
       amount: account.amount,
@@ -131,11 +190,11 @@ app.post("/me/accounts", async (req, res) => {
 });
 
 // Sätt in pengar
-app.post("/me/accounts/transactions", async (req, res) => {
+app.post("/me/accounts/transactions", requireAuth, async (req, res) => {
   const connection = await db.getConnection();
 
   try {
-    const { token, amount } = req.body;
+    const { amount } = req.body;
 
     if (!validateAmount(amount)) {
       return res.status(400).json({
@@ -145,26 +204,20 @@ app.post("/me/accounts/transactions", async (req, res) => {
 
     await connection.beginTransaction();
 
-    const [sessions] = await connection.execute(
-      "SELECT * FROM sessions WHERE token = ?",
-      [token]
-    );
-
-    const session = sessions[0];
-
-    if (!session) {
-      await connection.rollback();
-      return res.status(401).json({
-        message: "Ogiltig token",
-      });
-    }
-
     const [accounts] = await connection.execute(
       "SELECT * FROM accounts WHERE userId = ? FOR UPDATE",
-      [session.userId]
+      [req.userId]
     );
 
     const account = accounts[0];
+
+    if (!account) {
+      await connection.rollback();
+      return res.status(404).json({
+        message: "Konto saknas",
+      });
+    }
+
     const newAmount = Number(account.amount) + Number(amount);
 
     await connection.execute(
@@ -195,31 +248,18 @@ app.post("/me/accounts/transactions", async (req, res) => {
 });
 
 
-
 // Ta ut pengar
-app.post("/me/accounts/withdrawals", async (req, res) => {
+app.post("/me/accounts/withdrawals", requireAuth, async (req, res) => {
   const connection = await db.getConnection();
 
   try {
-    const { token, amount } = req.body;
+    const { amount } = req.body;
 
     await connection.beginTransaction();
 
-    const [sessions] = await connection.execute(
-      "SELECT * FROM sessions WHERE token = ?",
-      [token]
-    );
-
-    const session = sessions[0];
-
-    if (!session) {
-      await connection.rollback();
-      return res.status(401).json({ message: "Ogiltig token" });
-    }
-
     const [accounts] = await connection.execute(
       "SELECT * FROM accounts WHERE userId = ? FOR UPDATE",
-      [session.userId]
+      [req.userId]
     );
 
     const account = accounts[0];
@@ -261,39 +301,15 @@ app.post("/me/accounts/withdrawals", async (req, res) => {
 });
 
 // Hämta transaktionshistorik
-app.get("/me/accounts/transactions", async (req, res) => {
+app.get("/me/accounts/transactions", requireAuth, async (req, res) => {
   try {
-    const authorization = req.headers.authorization;
-    const token = authorization?.startsWith("Bearer ")
-      ? authorization.slice(7)
-      : null;
-
-    if (!token) {
-      return res.status(401).json({
-        message: "Saknad token",
-      });
-    }
-
-    const [sessions] = await db.execute(
-      "SELECT * FROM sessions WHERE token = ?",
-      [token]
-    );
-
-    const session = sessions[0];
-
-    if (!session) {
-      return res.status(401).json({
-        message: "Ogiltig token",
-      });
-    }
-
     const [transactions] = await db.execute(
       `SELECT t.id, t.type, t.amount, t.createdAt
        FROM transactions t
        JOIN accounts a ON t.accountId = a.id
        WHERE a.userId = ?
        ORDER BY t.createdAt DESC, t.id DESC`,
-      [session.userId]
+      [req.userId]
     );
 
     res.status(200).json({

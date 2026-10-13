@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "../AuthContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { setToken } = useAuth();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -33,7 +35,7 @@ export default function LoginPage() {
       return;
     }
 
-    localStorage.setItem("token", data.token);
+    setToken(data.token);
 
     router.push("/account");
   }

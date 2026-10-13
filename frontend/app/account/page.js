@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "../AuthContext";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
@@ -12,6 +13,7 @@ const FEATURE_SAVINGS =
 
 export default function AccountPage() {
   const router = useRouter();
+  const { token, logout } = useAuth();
 
   const [balance, setBalance] = useState(null);
   const [amount, setAmount] = useState("");
@@ -20,8 +22,6 @@ export default function AccountPage() {
 
   useEffect(() => {
     async function getBalance() {
-      const token = localStorage.getItem("token");
-
       if (!token) {
         router.push("/login");
         return;
@@ -30,9 +30,9 @@ export default function AccountPage() {
       const response = await fetch(`${API_URL}/me/accounts`, {
         method: "POST",
         headers: {
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ token }),
       });
 
       const data = await response.json();
@@ -43,23 +43,21 @@ export default function AccountPage() {
     }
 
     getBalance();
-  }, [router]);
+  }, [router, token]);
 
   async function handleDeposit(event) {
     event.preventDefault();
     setMessage("");
-
-    const token = localStorage.getItem("token");
 
     const response = await fetch(
       `${API_URL}/me/accounts/transactions`,
       {
         method: "POST",
         headers: {
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          token,
           amount: Number(amount),
         }),
       }
@@ -79,17 +77,15 @@ export default function AccountPage() {
     event.preventDefault();
     setMessage("");
 
-    const token = localStorage.getItem("token");
-
     const response = await fetch(
       `${API_URL}/me/accounts/withdrawals`,
       {
         method: "POST",
         headers: {
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          token,
           amount: Number(withdrawalAmount),
         }),
       }
@@ -106,6 +102,11 @@ export default function AccountPage() {
     }
   }
 
+  function handleLogout() {
+    logout();
+    router.push("/login");
+  }
+
   return (
     <main>
       <h1>Mitt konto</h1>
@@ -115,6 +116,10 @@ export default function AccountPage() {
       <p>
         <Link href="/transactions">Visa transaktioner</Link>
       </p>
+
+      <button type="button" onClick={handleLogout}>
+        Logga ut
+      </button>
 
       {FEATURE_SAVINGS && (
         <section>

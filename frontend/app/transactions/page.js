@@ -3,20 +3,20 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "../AuthContext";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
 
 export default function TransactionsPage() {
   const router = useRouter();
+  const { token } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     async function loadTransactions() {
-      const token = localStorage.getItem("token");
-
       if (!token) {
         router.push("/login");
         return;
@@ -45,7 +45,7 @@ export default function TransactionsPage() {
     }
 
     loadTransactions();
-  }, [router]);
+  }, [router, token]);
 
   return (
     <main>
